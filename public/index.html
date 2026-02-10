@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>2026 Winter Olympics Medal Dashboard | Milano Cortina</title>
-  <script src="/lib/tailwind.js"></script>
-  <script src="/lib/chart.min.js"></script>
-  <script src="/lib/chartjs-plugin-datalabels.min.js"></script>
+  <script src="lib/tailwind.js"></script>
+  <script src="lib/chart.min.js"></script>
+  <script src="lib/chartjs-plugin-datalabels.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -92,6 +92,19 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Scraping Progress Indicator -->
+    <div id="scrapeProgress" class="hidden mb-8 bg-gray-900 rounded-2xl border border-gray-800 p-6">
+      <div class="flex items-center space-x-4 mb-3">
+        <div class="animate-spin-slow w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full flex-shrink-0"></div>
+        <div class="flex-1">
+          <p id="scrapeMessage" class="text-sm text-gray-300">Fetching medal data from Wikipedia...</p>
+          <div class="mt-2 w-full bg-gray-800 rounded-full h-2">
+            <div id="scrapeBar" class="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Stats Overview -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       <div class="bg-gray-900 rounded-2xl p-6 border border-gray-800 glow-blue">
@@ -348,6 +361,7 @@
     </div>
   </footer>
 
+  <script src="scraper.js"></script>
   <script>
     let pieChart, barChart, lineChart;
     let currentData = null;
@@ -366,16 +380,61 @@
     }
 
     async function fetchMedalData() {
+      const CACHE_KEY = 'olympics_medal_data';
+      const CACHE_TS_KEY = 'olympics_medal_ts';
+      const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
       try {
-        const response = await fetch('/api/medals');
-        const data = await response.json();
-        currentData = data;
+        // Check sessionStorage cache
+        const cachedTs = sessionStorage.getItem(CACHE_TS_KEY);
+        if (cachedTs && (Date.now() - Number(cachedTs)) < CACHE_TTL) {
+          const cached = sessionStorage.getItem(CACHE_KEY);
+          if (cached) {
+            const data = JSON.parse(cached);
+            currentData = data;
+            isLoading = false;
+            updateDashboard(data);
+            return data;
+          }
+        }
+
+        // Show progress UI
+        const progressEl = document.getElementById('scrapeProgress');
+        const messageEl = document.getElementById('scrapeMessage');
+        const barEl = document.getElementById('scrapeBar');
+        progressEl.classList.remove('hidden');
+
+        function onProgress(info) {
+          if (info.phase === 'table') {
+            messageEl.textContent = info.message;
+            barEl.style.width = '5%';
+          } else if (info.phase === 'countries') {
+            messageEl.textContent = info.message;
+            const pct = 5 + Math.round((info.current / info.total) * 90);
+            barEl.style.width = pct + '%';
+          }
+        }
+
+        const data = await fetchAllMedalData(onProgress);
+        barEl.style.width = '100%';
+
+        if (data) {
+          currentData = data;
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
+          sessionStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+          updateDashboard(data);
+        } else {
+          showEmptyState();
+        }
+
         isLoading = false;
-        updateDashboard(data);
+        progressEl.classList.add('hidden');
         return data;
       } catch (error) {
         console.error('Error fetching data:', error);
         isLoading = false;
+        document.getElementById('scrapeProgress').classList.add('hidden');
+        showEmptyState();
       }
     }
 
@@ -641,61 +700,62 @@
       }
     }
 
-    async function showCountryDetails(countryCode) {
+    function showCountryDetails(countryCode) {
       const modal = document.getElementById('countryModal');
       const content = document.getElementById('modalContent');
       const title = document.getElementById('modalCountryName');
 
-      content.innerHTML = '<div class="flex items-center justify-center py-12"><div class="animate-spin-slow w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>';
       modal.classList.remove('hidden');
       modal.classList.add('flex');
 
-      try {
-        const response = await fetch('/api/medals/' + encodeURIComponent(countryCode));
-        const data = await response.json();
-        title.textContent = (data.flag || '') + ' ' + (data.name || countryCode);
+      const data = getCountryDetails(countryCode, currentData);
 
-        let medalsBySportHtml = '';
-        if (data.medalsBySport && Object.keys(data.medalsBySport).length > 0) {
-          medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medals by Sport</h4><div class="space-y-4">' +
-            Object.entries(data.medalsBySport).map(([sport, athletes]) => `
-              <div class="bg-gray-800/50 rounded-lg p-4">
-                <h5 class="font-medium text-white mb-3">${escapeHtml(sport)}</h5>
-                <div class="space-y-2">
-                  ${athletes.map(a => {
-                    return `<div class="flex items-start gap-3 text-sm py-1.5 border-b border-gray-700/50 last:border-0">
-                      <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
-                      <div class="flex-1 min-w-0">
-                        <div class="text-gray-300">${escapeHtml(a.event)}</div>
-                        <div class="text-gray-500 text-xs mt-0.5">${escapeHtml(a.name)}</div>
-                      </div>
-                    </div>`;
-                  }).join('')}
-                </div>
-              </div>`).join('') + '</div>';
-        } else if (data.athletes && data.athletes.length > 0) {
-          medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medal Winners</h4><div class="space-y-2">' +
-            data.athletes.map(a => {
-              return `<div class="flex items-start gap-3 p-3 rounded-lg bg-gray-800/50">
-                <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium text-white">${escapeHtml(a.name)}</div>
-                  <div class="text-xs text-gray-400 mt-0.5"><span class="text-gray-300">${escapeHtml(a.sport)}</span> <span class="text-gray-600">›</span> ${escapeHtml(a.event)}</div>
-                </div>
-              </div>`;
-            }).join('') + '</div>';
-        }
-
-        content.innerHTML = `
-          <div class="grid grid-cols-3 gap-4 mb-6">
-            <div class="bg-gold/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-gold">${data.gold || 0}</div><div class="text-sm text-gray-400">Gold</div></div>
-            <div class="bg-gray-400/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-silver">${data.silver || 0}</div><div class="text-sm text-gray-400">Silver</div></div>
-            <div class="bg-orange-700/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-bronze">${data.bronze || 0}</div><div class="text-sm text-gray-400">Bronze</div></div>
-          </div>
-          ${medalsBySportHtml || '<p class="text-gray-500">No detailed medal information available yet.</p>'}`;
-      } catch (error) {
-        content.innerHTML = '<p class="text-red-400">Failed to load country details.</p>';
+      if (!data) {
+        title.textContent = countryCode;
+        content.innerHTML = '<p class="text-red-400">Country not found.</p>';
+        return;
       }
+
+      title.textContent = (data.flag || '') + ' ' + (data.name || countryCode);
+
+      let medalsBySportHtml = '';
+      if (data.medalsBySport && Object.keys(data.medalsBySport).length > 0) {
+        medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medals by Sport</h4><div class="space-y-4">' +
+          Object.entries(data.medalsBySport).map(([sport, athletes]) => `
+            <div class="bg-gray-800/50 rounded-lg p-4">
+              <h5 class="font-medium text-white mb-3">${escapeHtml(sport)}</h5>
+              <div class="space-y-2">
+                ${athletes.map(a => {
+                  return `<div class="flex items-start gap-3 text-sm py-1.5 border-b border-gray-700/50 last:border-0">
+                    <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-gray-300">${escapeHtml(a.event)}</div>
+                      <div class="text-gray-500 text-xs mt-0.5">${escapeHtml(a.name)}</div>
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>`).join('') + '</div>';
+      } else if (data.athletes && data.athletes.length > 0) {
+        medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medal Winners</h4><div class="space-y-2">' +
+          data.athletes.map(a => {
+            return `<div class="flex items-start gap-3 p-3 rounded-lg bg-gray-800/50">
+              <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-white">${escapeHtml(a.name)}</div>
+                <div class="text-xs text-gray-400 mt-0.5"><span class="text-gray-300">${escapeHtml(a.sport)}</span> <span class="text-gray-600">›</span> ${escapeHtml(a.event)}</div>
+              </div>
+            </div>`;
+          }).join('') + '</div>';
+      }
+
+      content.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="bg-gold/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-gold">${data.gold || 0}</div><div class="text-sm text-gray-400">Gold</div></div>
+          <div class="bg-gray-400/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-silver">${data.silver || 0}</div><div class="text-sm text-gray-400">Silver</div></div>
+          <div class="bg-orange-700/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-bronze">${data.bronze || 0}</div><div class="text-sm text-gray-400">Bronze</div></div>
+        </div>
+        ${medalsBySportHtml || '<p class="text-gray-500">No detailed medal information available yet.</p>'}`;
     }
 
     function closeModal() {
