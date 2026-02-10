@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 Winter Olympics Medal Dashboard | Milano Cortina</title>
+  <script src="/lib/tailwind.js"></script>
+  <script src="/lib/chart.min.js"></script>
+  <script src="/lib/chartjs-plugin-datalabels.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            gold: '#FFD700',
+            silver: '#C0C0C0',
+            bronze: '#CD7F32',
+            olympics: {
+              blue: '#0085C7',
+              yellow: '#F4C300',
+              black: '#000000',
+              green: '#009F3D',
+              red: '#DF0024',
+            }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'fade-in': 'fadeIn 0.5s ease-out',
+            'slide-up': 'slideUp 0.5s ease-out',
+            'spin-slow': 'spin 2s linear infinite',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: #1f2937; border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    .medal-gold { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); }
+    .medal-silver { background: linear-gradient(135deg, #E8E8E8 0%, #A8A8A8 100%); }
+    .medal-bronze { background: linear-gradient(135deg, #CD7F32 0%, #8B4513 100%); }
+    .glass { background: rgba(17, 24, 39, 0.8); backdrop-filter: blur(12px); }
+    .glow-blue { box-shadow: 0 0 30px rgba(0, 133, 199, 0.2); }
+    .country-row:hover { background: rgba(59, 130, 246, 0.1); }
+    @keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
+    .shimmer { background: linear-gradient(90deg, #1f2937 0%, #374151 50%, #1f2937 100%); background-size: 1000px 100%; animation: shimmer 2s infinite linear; }
+    .skeleton { background: #374151; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans min-h-screen">
+  <!-- Header -->
+  <header class="sticky top-0 z-50 glass border-b border-gray-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center space-x-4">
+          <div class="flex space-x-1">
+            <div class="w-3 h-3 rounded-full bg-olympics-blue"></div>
+            <div class="w-3 h-3 rounded-full bg-olympics-yellow"></div>
+            <div class="w-3 h-3 rounded-full bg-black border border-gray-600"></div>
+            <div class="w-3 h-3 rounded-full bg-olympics-green"></div>
+            <div class="w-3 h-3 rounded-full bg-olympics-red"></div>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Milano Cortina 2026</h1>
+            <p class="text-xs text-gray-500">Winter Olympics Medal Tracker</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-4">
+          <div id="dataSource" class="text-xs text-gray-500 hidden"></div>
+          <div id="liveIndicator" class="flex items-center space-x-2 px-3 py-1 rounded-full bg-gray-800/50">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            <span class="text-xs text-gray-400">Live Updates</span>
+          </div>
+          <div id="lastUpdated" class="text-xs text-gray-500"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="bg-gray-900 rounded-2xl p-6 border border-gray-800 glow-blue">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-gray-500 text-sm font-medium">Total Medals</p>
+            <p id="totalMedals" class="text-3xl font-bold text-white mt-1"><span class="shimmer inline-block w-12 h-8 rounded"></span></p>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-gray-500 text-sm font-medium">Gold</p>
+            <p id="totalGold" class="text-3xl font-bold text-gold mt-1"><span class="shimmer inline-block w-10 h-8 rounded"></span></p>
+          </div>
+          <div class="w-12 h-12 rounded-xl medal-gold flex items-center justify-center"><span class="text-xl">&#127941;</span></div>
+        </div>
+      </div>
+      <div class="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-gray-500 text-sm font-medium">Silver</p>
+            <p id="totalSilver" class="text-3xl font-bold text-silver mt-1"><span class="shimmer inline-block w-10 h-8 rounded"></span></p>
+          </div>
+          <div class="w-12 h-12 rounded-xl medal-silver flex items-center justify-center"><span class="text-xl">&#127942;</span></div>
+        </div>
+      </div>
+      <div class="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-gray-500 text-sm font-medium">Bronze</p>
+            <p id="totalBronze" class="text-3xl font-bold text-bronze mt-1"><span class="shimmer inline-block w-10 h-8 rounded"></span></p>
+          </div>
+          <div class="w-12 h-12 rounded-xl medal-bronze flex items-center justify-center"><span class="text-xl">&#127943;</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      <!-- Medal Standings Table -->
+      <div class="lg:col-span-2 bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-white flex items-center">
+            <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/>
+            </svg>
+            Medal Standings
+          </h2>
+          <div class="flex space-x-2">
+            <button id="sortByGold" class="sort-btn active px-3 py-1 text-xs rounded-lg bg-gold/20 text-gold font-medium transition-colors">Gold</button>
+            <button id="sortByTotal" class="sort-btn px-3 py-1 text-xs rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 font-medium transition-colors">Total</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto scrollbar-thin max-h-[500px] overflow-y-auto">
+          <table class="w-full">
+            <thead class="sticky top-0 bg-gray-900 border-b border-gray-800">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Rank</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Country</th>
+                <th class="px-6 py-3 text-center text-xs font-semibold text-gold uppercase tracking-wider">G</th>
+                <th class="px-6 py-3 text-center text-xs font-semibold text-silver uppercase tracking-wider">S</th>
+                <th class="px-6 py-3 text-center text-xs font-semibold text-bronze uppercase tracking-wider">B</th>
+                <th class="px-6 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
+              </tr>
+            </thead>
+            <tbody id="medalTable" class="divide-y divide-gray-800">
+              <!-- Loading skeleton -->
+              <tr><td colspan="6" class="px-6 py-4"><div class="shimmer h-10 rounded"></div></td></tr>
+              <tr><td colspan="6" class="px-6 py-4"><div class="shimmer h-10 rounded"></div></td></tr>
+              <tr><td colspan="6" class="px-6 py-4"><div class="shimmer h-10 rounded"></div></td></tr>
+              <tr><td colspan="6" class="px-6 py-4"><div class="shimmer h-10 rounded"></div></td></tr>
+              <tr><td colspan="6" class="px-6 py-4"><div class="shimmer h-10 rounded"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Medal Distribution Pie Chart -->
+      <div class="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+          </svg>
+          Medal Distribution
+        </h2>
+        <div id="pieChartWrapper" class="h-64 relative">
+          <div id="pieChartLoader" class="absolute inset-0 flex items-center justify-center">
+            <div class="text-center">
+              <div class="animate-spin-slow w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p class="text-gray-500 text-sm">Loading chart...</p>
+            </div>
+          </div>
+          <canvas id="medalPieChart" class="w-full h-full hidden"></canvas>
+        </div>
+        <div id="medalPercents" class="mt-4 grid grid-cols-3 gap-2 text-center hidden">
+          <div class="bg-gray-800/50 rounded-lg p-2">
+            <div class="text-gold font-bold" id="goldPercent">--</div>
+            <div class="text-xs text-gray-500">Gold</div>
+          </div>
+          <div class="bg-gray-800/50 rounded-lg p-2">
+            <div class="text-silver font-bold" id="silverPercent">--</div>
+            <div class="text-xs text-gray-500">Silver</div>
+          </div>
+          <div class="bg-gray-800/50 rounded-lg p-2">
+            <div class="text-bronze font-bold" id="bronzePercent">--</div>
+            <div class="text-xs text-gray-500">Bronze</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <!-- Top Countries Bar Chart -->
+      <div class="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+          Top 10 Countries
+        </h2>
+        <div id="barChartWrapper" class="h-80 relative">
+          <div id="barChartLoader" class="absolute inset-0 flex items-center justify-center">
+            <div class="text-center">
+              <div class="animate-spin-slow w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p class="text-gray-500 text-sm">Loading chart...</p>
+            </div>
+          </div>
+          <canvas id="topCountriesChart" class="w-full h-full hidden"></canvas>
+        </div>
+      </div>
+
+      <!-- Daily Progression Chart -->
+      <div class="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+          </svg>
+          Medal Progression
+        </h2>
+        <div id="lineChartWrapper" class="h-80 relative">
+          <div id="lineChartLoader" class="absolute inset-0 flex items-center justify-center">
+            <div class="text-center">
+              <div class="animate-spin-slow w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p class="text-gray-500 text-sm">Loading chart...</p>
+            </div>
+          </div>
+          <canvas id="progressionChart" class="w-full h-full hidden"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Medals by Sport -->
+    <div class="bg-gray-900 rounded-2xl border border-gray-800 mb-8">
+      <div class="px-6 py-4 border-b border-gray-800">
+        <h2 class="text-lg font-semibold text-white flex items-center">
+          <svg class="w-5 h-5 mr-2 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          Medals by Sport
+        </h2>
+      </div>
+      <div id="sportsContainer" class="p-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="shimmer h-32 rounded-xl"></div>
+          <div class="shimmer h-32 rounded-xl"></div>
+          <div class="shimmer h-32 rounded-xl"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Performers & Recent Medals -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <!-- Top Performers -->
+      <div class="bg-gray-900 rounded-2xl border border-gray-800">
+        <div class="px-6 py-4 border-b border-gray-800">
+          <h2 class="text-lg font-semibold text-white flex items-center">
+            <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+            </svg>
+            Top Performers (Gold Medalists)
+          </h2>
+        </div>
+        <div id="topPerformers" class="p-4 max-h-96 overflow-y-auto scrollbar-thin">
+          <div class="space-y-3">
+            <div class="shimmer h-16 rounded-xl"></div>
+            <div class="shimmer h-16 rounded-xl"></div>
+            <div class="shimmer h-16 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Medals -->
+      <div class="bg-gray-900 rounded-2xl border border-gray-800">
+        <div class="px-6 py-4 border-b border-gray-800">
+          <h2 class="text-lg font-semibold text-white flex items-center">
+            <svg class="w-5 h-5 mr-2 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Recent Medals
+          </h2>
+        </div>
+        <div id="recentMedals" class="p-4 max-h-96 overflow-y-auto scrollbar-thin">
+          <div class="space-y-3">
+            <div class="shimmer h-16 rounded-xl"></div>
+            <div class="shimmer h-16 rounded-xl"></div>
+            <div class="shimmer h-16 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Country Detail Modal -->
+    <div id="countryModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+      <div class="bg-gray-900 rounded-2xl border border-gray-800 max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+          <h3 id="modalCountryName" class="text-xl font-bold text-white">Country Details</h3>
+          <button onclick="closeModal()" class="text-gray-400 hover:text-white transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div id="modalContent" class="p-6 overflow-y-auto max-h-[70vh] scrollbar-thin"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-800 mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div class="flex flex-col md:flex-row items-center justify-between">
+        <div class="flex items-center space-x-2 mb-4 md:mb-0">
+          <div class="flex space-x-1">
+            <div class="w-2 h-2 rounded-full bg-olympics-blue"></div>
+            <div class="w-2 h-2 rounded-full bg-olympics-yellow"></div>
+            <div class="w-2 h-2 rounded-full bg-black border border-gray-600"></div>
+            <div class="w-2 h-2 rounded-full bg-olympics-green"></div>
+            <div class="w-2 h-2 rounded-full bg-olympics-red"></div>
+          </div>
+          <span class="text-sm text-gray-500">Milano Cortina 2026 Winter Olympics</span>
+        </div>
+        <div class="text-xs text-gray-600">
+          Data from Wikipedia. Refreshes every 5 minutes. Last update: <span id="footerUpdate">--</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    let pieChart, barChart, lineChart;
+    let currentData = null;
+    let sortBy = 'gold';
+    let isLoading = true;
+
+    Chart.register(ChartDataLabels);
+    Chart.defaults.color = '#9CA3AF';
+    Chart.defaults.font.family = 'Inter';
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function fetchMedalData() {
+      try {
+        const response = await fetch('/api/medals');
+        const data = await response.json();
+        currentData = data;
+        isLoading = false;
+        updateDashboard(data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        isLoading = false;
+      }
+    }
+
+    function updateDashboard(data) {
+      if (!data || !data.countries || data.countries.length === 0) {
+        showEmptyState();
+        return;
+      }
+
+      updateStats(data);
+      updateMedalTable(data.countries);
+      updatePieChart(data);
+      updateBarChart(data.countries);
+      updateProgressionChart(data.dailyProgression);
+      updateSportsGrid(data.sports);
+      updateTopPerformers(data.topPerformers || data.athletes?.filter(a => a.medal === 'gold'));
+      updateRecentMedals(data.recentMedals || data.athletes);
+      updateTimestamp(data.lastUpdated, data.dataSource);
+    }
+
+    function showEmptyState() {
+      document.getElementById('medalTable').innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No medal data available. Please try again later.</td></tr>';
+    }
+
+    function updateStats(data) {
+      const countries = data.countries || [];
+      const totalGold = countries.reduce((sum, c) => sum + (c.gold || 0), 0);
+      const totalSilver = countries.reduce((sum, c) => sum + (c.silver || 0), 0);
+      const totalBronze = countries.reduce((sum, c) => sum + (c.bronze || 0), 0);
+      const total = totalGold + totalSilver + totalBronze;
+
+      document.getElementById('totalMedals').textContent = total;
+      document.getElementById('totalGold').textContent = totalGold;
+      document.getElementById('totalSilver').textContent = totalSilver;
+      document.getElementById('totalBronze').textContent = totalBronze;
+
+      if (total > 0) {
+        document.getElementById('goldPercent').textContent = ((totalGold / total) * 100).toFixed(1) + '%';
+        document.getElementById('silverPercent').textContent = ((totalSilver / total) * 100).toFixed(1) + '%';
+        document.getElementById('bronzePercent').textContent = ((totalBronze / total) * 100).toFixed(1) + '%';
+        document.getElementById('medalPercents').classList.remove('hidden');
+      }
+    }
+
+    function updateMedalTable(countries) {
+      const tbody = document.getElementById('medalTable');
+      if (!countries || countries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading medal data...</td></tr>';
+        return;
+      }
+
+      const sorted = [...countries].sort((a, b) => {
+        if (sortBy === 'gold') {
+          if (b.gold !== a.gold) return b.gold - a.gold;
+          if (b.silver !== a.silver) return b.silver - a.silver;
+          return b.bronze - a.bronze;
+        }
+        return b.total - a.total;
+      });
+
+      tbody.innerHTML = sorted.map((country, index) => {
+        const countryId = escapeHtml(country.code || country.name);
+        const countryName = escapeHtml(country.name);
+        const countryCode = escapeHtml(country.code || '');
+        const flag = country.flag || '';
+        return `
+        <tr class="country-row cursor-pointer transition-colors" data-country="${countryId}">
+          <td class="px-6 py-4 whitespace-nowrap">
+            <span class="${index < 3 ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 text-yellow-400' : 'text-gray-400'} px-2 py-1 rounded-lg text-sm font-semibold">${index + 1}</span>
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex items-center space-x-3">
+              <span class="text-2xl">${flag}</span>
+              <div>
+                <div class="font-semibold text-white">${countryName}</div>
+                <div class="text-xs text-gray-500">${countryCode}</div>
+              </div>
+            </div>
+          </td>
+          <td class="px-6 py-4 text-center"><span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gold/20 text-gold font-bold">${country.gold || 0}</span></td>
+          <td class="px-6 py-4 text-center"><span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-400/20 text-silver font-bold">${country.silver || 0}</span></td>
+          <td class="px-6 py-4 text-center"><span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-orange-700/20 text-bronze font-bold">${country.bronze || 0}</span></td>
+          <td class="px-6 py-4 text-center"><span class="font-bold text-white text-lg">${country.total || 0}</span></td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.country-row').forEach(row => {
+        row.addEventListener('click', () => showCountryDetails(row.dataset.country));
+      });
+    }
+
+    function updatePieChart(data) {
+      const loader = document.getElementById('pieChartLoader');
+      const canvas = document.getElementById('medalPieChart');
+      const countries = data.countries || [];
+      const totalGold = countries.reduce((sum, c) => sum + (c.gold || 0), 0);
+      const totalSilver = countries.reduce((sum, c) => sum + (c.silver || 0), 0);
+      const totalBronze = countries.reduce((sum, c) => sum + (c.bronze || 0), 0);
+
+      if (totalGold === 0 && totalSilver === 0 && totalBronze === 0) return;
+
+      loader.classList.add('hidden');
+      canvas.classList.remove('hidden');
+
+      if (pieChart) pieChart.destroy();
+      pieChart = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Gold', 'Silver', 'Bronze'],
+          datasets: [{ data: [totalGold, totalSilver, totalBronze], backgroundColor: ['#FFD700', '#C0C0C0', '#CD7F32'], borderColor: ['#B8860B', '#A9A9A9', '#8B4513'], borderWidth: 2, hoverOffset: 10 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, formatter: (value) => value } } }
+      });
+    }
+
+    function updateBarChart(countries) {
+      const loader = document.getElementById('barChartLoader');
+      const canvas = document.getElementById('topCountriesChart');
+      if (!countries || countries.length === 0) return;
+
+      loader.classList.add('hidden');
+      canvas.classList.remove('hidden');
+
+      const top10 = countries.slice(0, 10);
+      if (barChart) barChart.destroy();
+      barChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: top10.map(c => c.name),
+          datasets: [
+            { label: 'Gold', data: top10.map(c => c.gold), backgroundColor: '#FFD700', borderRadius: 4 },
+            { label: 'Silver', data: top10.map(c => c.silver), backgroundColor: '#C0C0C0', borderRadius: 4 },
+            { label: 'Bronze', data: top10.map(c => c.bronze), backgroundColor: '#CD7F32', borderRadius: 4 }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } } }, y: { stacked: true, grid: { color: 'rgba(255,255,255,0.1)' }, beginAtZero: true } }, plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 15 } }, datalabels: { display: false } } }
+      });
+    }
+
+    function updateProgressionChart(progression) {
+      const loader = document.getElementById('lineChartLoader');
+      const canvas = document.getElementById('progressionChart');
+      if (!progression || progression.length === 0) return;
+
+      loader.classList.add('hidden');
+      canvas.classList.remove('hidden');
+
+      if (lineChart) lineChart.destroy();
+      lineChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: progression.map(d => 'Day ' + d.day),
+          datasets: [
+            { label: 'Daily Medals', data: progression.map(d => d.medalsAwarded), borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 4 },
+            { label: 'Cumulative', data: progression.map(d => d.cumulativeTotal), borderColor: '#10B981', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0.4, pointRadius: 3, yAxisID: 'y1' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false } }, y: { type: 'linear', position: 'left', grid: { color: 'rgba(255,255,255,0.1)' }, title: { display: true, text: 'Daily' } }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Cumulative' } } }, plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 15 } }, datalabels: { display: false } } }
+      });
+    }
+
+    function medalDot(type) {
+      const colors = { gold: 'bg-gold', silver: 'bg-silver', bronze: 'bg-bronze' };
+      return `<span class="w-2.5 h-2.5 rounded-full ${colors[type] || 'bg-gray-500'} inline-block flex-shrink-0"></span>`;
+    }
+
+    function updateSportsGrid(sports) {
+      const container = document.getElementById('sportsContainer');
+      if (!sports || sports.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No sport data available yet.</p>';
+        return;
+      }
+
+      container.innerHTML = '<div class="space-y-4">' + sports.map(sport => {
+        const sportName = escapeHtml(sport.name);
+        const events = sport.events || [];
+        return `
+        <div class="bg-gray-800/50 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-white">${sportName}</h3>
+            <div class="flex items-center space-x-3 text-sm">
+              <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-gold"></span><span class="text-gold">${sport.gold || 0}</span></span>
+              <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-silver"></span><span class="text-silver">${sport.silver || 0}</span></span>
+              <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-bronze"></span><span class="text-bronze">${sport.bronze || 0}</span></span>
+            </div>
+          </div>
+          ${events.length > 0 ? `
+          <div class="space-y-2">
+            ${events.slice(0, 6).map(event => {
+              return `
+              <div class="flex items-center justify-between text-sm bg-gray-900/50 rounded-lg px-3 py-2">
+                <div class="flex items-center space-x-2">
+                  ${medalDot(event.medal)}
+                  <span class="text-gray-300">${escapeHtml(event.name)}</span>
+                </div>
+                <div class="text-gray-500 text-right">${event.flag || ''} ${escapeHtml(event.athlete || event.country)}</div>
+              </div>`;
+            }).join('')}
+            ${events.length > 6 ? `<div class="text-xs text-gray-500 text-center">+${events.length - 6} more events</div>` : ''}
+          </div>` : '<p class="text-sm text-gray-500">No events yet</p>'}
+        </div>`;
+      }).join('') + '</div>';
+    }
+
+    function updateTopPerformers(performers) {
+      const container = document.getElementById('topPerformers');
+      if (!performers || performers.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No performers data yet.</p>';
+        return;
+      }
+
+      container.innerHTML = '<div class="space-y-3">' + performers.slice(0, 10).map((athlete, index) => {
+        const name = escapeHtml(athlete.name || 'TBD');
+        const country = escapeHtml(athlete.country);
+        const sport = escapeHtml(athlete.sport);
+        const event = escapeHtml(athlete.event);
+        const flag = athlete.flag || '';
+        return `
+        <div class="flex items-center space-x-4 p-3 rounded-xl bg-gray-800/30 hover:bg-gray-800/50 transition-colors">
+          <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center text-sm font-bold text-white">${index + 1}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-white truncate">${name}</div>
+            <div class="text-xs text-gray-500">${flag} ${country}</div>
+            <div class="text-xs text-gray-400"><span class="text-white">${sport}</span> <span class="text-gray-600">›</span> ${event}</div>
+          </div>
+          <div class="flex-shrink-0">${medalDot('gold')}</div>
+        </div>`;
+      }).join('') + '</div>';
+    }
+
+    function updateRecentMedals(athletes) {
+      const container = document.getElementById('recentMedals');
+      if (!athletes || athletes.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">No medal data yet.</p>';
+        return;
+      }
+
+      container.innerHTML = '<div class="space-y-3">' + athletes.slice(0, 15).map(athlete => {
+        const name = escapeHtml(athlete.name || 'TBD');
+        const sport = escapeHtml(athlete.sport);
+        const event = escapeHtml(athlete.event);
+        const flag = athlete.flag || '';
+        return `
+        <div class="flex items-center space-x-4 p-3 rounded-xl bg-gray-800/30 hover:bg-gray-800/50 transition-colors">
+          <div class="flex-shrink-0 w-4 h-4 flex items-center justify-center">${medalDot(athlete.medal)}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-white truncate">${name}</div>
+            <div class="text-xs text-gray-500">${flag} ${escapeHtml(athlete.country)}</div>
+            <div class="text-xs text-gray-400"><span class="text-white">${sport}</span> <span class="text-gray-600">›</span> ${event}</div>
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+    }
+
+    function updateTimestamp(timestamp, source) {
+      const date = new Date(timestamp);
+      const formatted = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('lastUpdated').textContent = formatted;
+      document.getElementById('footerUpdate').textContent = formatted;
+      if (source) {
+        document.getElementById('dataSource').textContent = 'Source: ' + source;
+        document.getElementById('dataSource').classList.remove('hidden');
+      }
+    }
+
+    async function showCountryDetails(countryCode) {
+      const modal = document.getElementById('countryModal');
+      const content = document.getElementById('modalContent');
+      const title = document.getElementById('modalCountryName');
+
+      content.innerHTML = '<div class="flex items-center justify-center py-12"><div class="animate-spin-slow w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>';
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      try {
+        const response = await fetch('/api/medals/' + encodeURIComponent(countryCode));
+        const data = await response.json();
+        title.textContent = (data.flag || '') + ' ' + (data.name || countryCode);
+
+        let medalsBySportHtml = '';
+        if (data.medalsBySport && Object.keys(data.medalsBySport).length > 0) {
+          medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medals by Sport</h4><div class="space-y-4">' +
+            Object.entries(data.medalsBySport).map(([sport, athletes]) => `
+              <div class="bg-gray-800/50 rounded-lg p-4">
+                <h5 class="font-medium text-white mb-3">${escapeHtml(sport)}</h5>
+                <div class="space-y-2">
+                  ${athletes.map(a => {
+                    return `<div class="flex items-start gap-3 text-sm py-1.5 border-b border-gray-700/50 last:border-0">
+                      <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-gray-300">${escapeHtml(a.event)}</div>
+                        <div class="text-gray-500 text-xs mt-0.5">${escapeHtml(a.name)}</div>
+                      </div>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`).join('') + '</div>';
+        } else if (data.athletes && data.athletes.length > 0) {
+          medalsBySportHtml = '<h4 class="text-lg font-semibold text-white mb-4 mt-6">Medal Winners</h4><div class="space-y-2">' +
+            data.athletes.map(a => {
+              return `<div class="flex items-start gap-3 p-3 rounded-lg bg-gray-800/50">
+                <div class="flex-shrink-0 mt-1">${medalDot(a.medal)}</div>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-white">${escapeHtml(a.name)}</div>
+                  <div class="text-xs text-gray-400 mt-0.5"><span class="text-gray-300">${escapeHtml(a.sport)}</span> <span class="text-gray-600">›</span> ${escapeHtml(a.event)}</div>
+                </div>
+              </div>`;
+            }).join('') + '</div>';
+        }
+
+        content.innerHTML = `
+          <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-gold/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-gold">${data.gold || 0}</div><div class="text-sm text-gray-400">Gold</div></div>
+            <div class="bg-gray-400/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-silver">${data.silver || 0}</div><div class="text-sm text-gray-400">Silver</div></div>
+            <div class="bg-orange-700/20 rounded-xl p-4 text-center"><div class="text-3xl font-bold text-bronze">${data.bronze || 0}</div><div class="text-sm text-gray-400">Bronze</div></div>
+          </div>
+          ${medalsBySportHtml || '<p class="text-gray-500">No detailed medal information available yet.</p>'}`;
+      } catch (error) {
+        content.innerHTML = '<p class="text-red-400">Failed to load country details.</p>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('countryModal').classList.add('hidden');
+      document.getElementById('countryModal').classList.remove('flex');
+    }
+
+    document.getElementById('countryModal').addEventListener('click', (e) => { if (e.target.id === 'countryModal') closeModal(); });
+    document.getElementById('sortByGold').addEventListener('click', () => {
+      sortBy = 'gold';
+      document.getElementById('sortByGold').classList.add('bg-gold/20', 'text-gold');
+      document.getElementById('sortByGold').classList.remove('bg-gray-800', 'text-gray-400');
+      document.getElementById('sortByTotal').classList.remove('bg-blue-500/20', 'text-blue-400');
+      document.getElementById('sortByTotal').classList.add('bg-gray-800', 'text-gray-400');
+      if (currentData) updateMedalTable(currentData.countries);
+    });
+    document.getElementById('sortByTotal').addEventListener('click', () => {
+      sortBy = 'total';
+      document.getElementById('sortByTotal').classList.add('bg-blue-500/20', 'text-blue-400');
+      document.getElementById('sortByTotal').classList.remove('bg-gray-800', 'text-gray-400');
+      document.getElementById('sortByGold').classList.remove('bg-gold/20', 'text-gold');
+      document.getElementById('sortByGold').classList.add('bg-gray-800', 'text-gray-400');
+      if (currentData) updateMedalTable(currentData.countries);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    fetchMedalData();
+    setInterval(fetchMedalData, 300000); // Refresh every 5 minutes
+  </script>
+</body>
+</html>
