@@ -783,7 +783,12 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
     fetchMedalData();
-    setInterval(fetchMedalData, 300000); // Refresh every 5 minutes
+    setInterval(() => {
+      // Clear cache so the interval always fetches fresh data
+      sessionStorage.removeItem('olympics_medal_data');
+      sessionStorage.removeItem('olympics_medal_ts');
+      fetchMedalData();
+    }, 300000); // Refresh every 5 minutes
   </script>
 </body>
 </html>
